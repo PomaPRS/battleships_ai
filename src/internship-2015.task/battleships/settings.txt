@@ -1,12 +1,12 @@
 ﻿interactive false
 verbose		true
-gamesCount	10
-height		20
-width		20
-ships		7 6 6 5 5 5 4 4 4 4 3 3 3 2 2 1
+gamesCount	100
+height		10
+width		10
+#ships		7 6 6 5 5 5 4 4 4 4 3 3 3 2 2 1
 timelimitSeconds	10
 memorylimit			200000000
 crashlimit			1
 #	
-#	ships		4 3 3 2 2 2 1 1 1 1
+ships		4 3 3 2 2 2 1 1 1 1
 #	randomSeed	14567865
