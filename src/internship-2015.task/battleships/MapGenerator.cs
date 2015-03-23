@@ -6,7 +6,6 @@ namespace battleships
 {
 	public class MapGenerator
 	{
-		private readonly MyLogger logger = new MyLogger("log.txt");
 		private readonly int height;
 		private readonly Random random;
 		private readonly int[] shipSizes;
@@ -25,14 +24,6 @@ namespace battleships
 			var map = new Map(width, height);
 			foreach (var size in shipSizes)
 				PlaceShip(map, size);
-
-			logger.Add("");
-			logger.Add(string.Format("Generate Map {0} {1}", width, height));
-			foreach (var ship in map.Ships)
-			{
-				logger.Add(ship.Location.ToString(), ship.Size.ToString(), ship.Direction.ToString());
-			}
-			
 			return map;
 		}
 

@@ -20,20 +20,6 @@ namespace battleships
 			this.timeLimit = timeLimit;
 			this.memoryLimit = memoryLimit;
 			CreateMonitoringThread().Start();
-			TotalProcessesTime = new TimeSpan(0);
-		}
-
-		public TimeSpan TotalProcessesTime { get; private set; }
-
-		public bool Active
-		{
-			get
-			{
-				lock (processes)
-				{
-					return processes.Any();
-				}
-			}
 		}
 
 		private Thread CreateMonitoringThread()
@@ -66,11 +52,7 @@ namespace battleships
 
 		private void Inspect(Process process)
 		{
-			if (process.HasExited)
-			{
-				TotalProcessesTime += process.ExitTime - process.StartTime;
-				processes.Remove(process);
-			}
+			if (process.HasExited) processes.Remove(process);
 			else
 			{
 				CheckParameter(process.TotalProcessorTime, timeLimit, process, "TimeLimit");
