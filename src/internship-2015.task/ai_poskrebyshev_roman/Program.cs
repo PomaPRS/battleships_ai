@@ -36,11 +36,10 @@ namespace ai_poskrebyshev_roman
 			try
 			{
 				var messager = new Messenger();
-				var response = messager.GetResponse();
-				var isGameInfo = response is GameInfo;
-				if (!isGameInfo) return;
+				var response = messager.GetResponse() as GameInfo;
+				if (response == null) return;
 
-				var game = new Game((GameInfo) response, messager);
+				var game = new Game(response, messager);
 				while (game != null)
 				{
 					game = game.RunAndGetNextGame();
@@ -60,7 +59,7 @@ namespace ai_poskrebyshev_roman
 		private readonly Messenger messenger;
 		private readonly List<int> aliveShipSizes; 
 		private int shipCellsCount;
-		private Response lastResponse;
+		private Game nextGame;
 
 		public Game(GameInfo gameInfo, Messenger messenger)
 		{
@@ -80,9 +79,7 @@ namespace ai_poskrebyshev_roman
 		public Game RunAndGetNextGame()
 		{
 			Run();
-			return lastResponse is GameInfo 
-				? new Game((GameInfo) lastResponse, messenger) 
-				: null;
+			return nextGame;
 		}
 
 		public void Run()
@@ -91,6 +88,11 @@ namespace ai_poskrebyshev_roman
 			{
 				MakeStep();
 			}
+		}
+
+		public void Finish()
+		{
+			shipCellsCount = 0;
 		}
 		
 		public void MakeStep()
@@ -108,48 +110,51 @@ namespace ai_poskrebyshev_roman
 				strategy = new RandomStrategy(map, random);
 			}
 
-			MakeHit(strategy.GetTarget());
-			UpdateGameStatus();
+			var response = MakeHit(strategy.GetTarget());
+			UpdateGameStatus(response);
 		}
 
-		private void MakeHit(Vector target)
+		private Response MakeHit(Vector target)
 		{
 			messenger.Send(target);
-			lastResponse = messenger.GetResponse();
+			return messenger.GetResponse();
 		}
 
-		private void UpdateGameStatus()
+		private void UpdateGameStatus(Response response)
 		{
-			bool isShotInfo = lastResponse is ShotInfo;
-			if (!isShotInfo)
+			var shot = response as ShotInfo;
+			if (shot == null)
 			{
-				shipCellsCount = 0;
+				var gameInfo = response as GameInfo;
+				if (gameInfo != null)
+					nextGame = new Game(gameInfo, messenger);
+				Finish();
 				return;
 			}
-
-			var lastShotInfo = (ShotInfo) lastResponse;
-			var lastShotResult = lastShotInfo.Result;
-			var target = lastShotInfo.Target;
-
-			if (lastShotResult == ShotResult.Miss)
+			
+			switch (shot.Result)
 			{
-				map[target] = CellStatus.Missed;
-			}
-			else if (lastShotResult == ShotResult.Wound)
-			{
-				shipCellsCount--;
-				map[target] = CellStatus.Wounded;
-				MarkDiagonalCellsAsMissed(target);
-			}
-			else if (lastShotResult == ShotResult.Kill)
-			{
-				shipCellsCount--;
-				MarkLastKilledShip();
+				case ShotResult.Miss:
+					ProcessMiss(shot.Target);
+					break;
+				case ShotResult.Wound:
+					ProcessWound(shot.Target);
+					break;
+				case ShotResult.Kill:
+					ProcessKill(shot.Target);
+					break;
 			}
 		}
 
-		private void MarkDiagonalCellsAsMissed(Vector target)
+		private void ProcessMiss(Vector target)
 		{
+			map[target] = CellStatus.Missed;
+		}
+
+		private void ProcessWound(Vector target)
+		{
+			shipCellsCount--;
+			map[target] = CellStatus.Wounded;
 			var diagonalCells = map.GetDiagonalCells(target);
 			foreach (var cell in diagonalCells)
 			{
@@ -157,14 +162,15 @@ namespace ai_poskrebyshev_roman
 			}
 		}
 
-		private void MarkLastKilledShip()
+		private void ProcessKill(Vector target)
 		{
-			var shipCells = GetLastKilledShipCells().ToList();
-			var nearShipCells = map.GetNearCells(shipCells);
-
+			shipCellsCount--;
+			map[target] = CellStatus.Wounded;
+			var shipCells = GetWoundedShipCells(target).ToList();
 			var shipSize = shipCells.Count;
 			aliveShipSizes.Remove(shipSize);
 
+			var nearShipCells = shipCells.SelectMany(c => map.GetNearCells(c));
 			foreach (var cell in nearShipCells)
 			{
 				if (map[cell] == CellStatus.Hidden)
@@ -174,28 +180,21 @@ namespace ai_poskrebyshev_roman
 			}
 		}
 
-		private IEnumerable<Vector> GetLastKilledShipCells()
+		private IEnumerable<Vector> GetWoundedShipCells(Vector target)
 		{
-			var lastShotInfo = (ShotInfo) lastResponse;
-			var target = lastShotInfo.Target;
-			var shipCells = new List<Vector> { target };
-			var directions = new[] { new Vector(1, 0), new Vector(-1, 0), new Vector(0, 1), new Vector(0, -1) };
+			if (map[target] != CellStatus.Wounded) 
+				return Enumerable.Empty<Vector>();
 
-			foreach (var direction in directions)
-			{
-				int size = 0;
-				bool isKilledOrWoundedShipCell;
-				do
-				{
-					size++;
-					var cell = direction.Mult(size).Add(target);
-					isKilledOrWoundedShipCell = map[cell] == CellStatus.Killed || map[cell] == CellStatus.Wounded;
-					if (isKilledOrWoundedShipCell)
-						shipCells.Add(cell);
-				}
-				while (isKilledOrWoundedShipCell);
-			}
-			return shipCells;
+			var directions = new[] { new Vector(1, 0), new Vector(-1, 0), new Vector(0, 1), new Vector(0, -1) };
+			return directions.SelectMany(x => GetWoundedShipCells(target.Add(x), x)).Concat(new[] {target});
+		}
+
+		private IEnumerable<Vector> GetWoundedShipCells(Vector target, Vector shift)
+		{
+			var maxShift = Math.Max(map.Width, map.Height);
+			return Enumerable.Range(0, maxShift)
+				.Select(x => shift.Mult(x).Add(target))
+				.TakeWhile(cell => map[cell] == CellStatus.Wounded);
 		}
 	}
 
@@ -221,17 +220,17 @@ namespace ai_poskrebyshev_roman
 		private readonly List<int> aliveShipSizes;
 		private readonly Dictionary<int, int> shipSizesCount;
 
-		public SearchStrategy(Map map, int[] shipSizes) : base(map)
+		public SearchStrategy(Map map, int[] aliveShipSizes) : base(map)
 		{
-			aliveShipSizes = shipSizes.Where(x => x > 1).Distinct().ToList();
-			shipSizesCount = shipSizes.GroupBy(x => x).ToDictionary(x => x.Key, x => x.Count());
+			this.aliveShipSizes = aliveShipSizes.Where(x => x > 1).Distinct().ToList();
+			shipSizesCount = aliveShipSizes.GroupBy(x => x).ToDictionary(x => x.Key, x => x.Count());
 		}
 
 		public override Vector GetTarget()
 		{
 			var cells = map.GetCells((c, s) => s == CellStatus.Hidden || s == CellStatus.Wounded).ToList();
-			var ships = GetPotentialShips(cells);
-			var shipExpectation = GetShipExpectation(ships);
+			var ships = GetMaxWoundedShips(cells);
+			var shipExpectation = GetShipExpectation(ships.ToList());
 			return GetTarget(shipExpectation);
 		}
 
@@ -253,6 +252,20 @@ namespace ai_poskrebyshev_roman
 			return targets[targetId].Cell;
 		}
 
+		private IEnumerable<Ship> GetMaxWoundedShips(List<Vector> location)
+		{
+			var ships = GetPotentialShips(location).ToList();
+			var woundedCellsCounts = ships.Select(s =>
+			{
+				var shipCells = s.GetShipCells().ToList();
+				var woundedCellsCount = shipCells.Count(x => map[x] == CellStatus.Wounded);
+				return new { Ship = s, WoundedCellsCount = woundedCellsCount };
+			}).ToList();
+
+			var woundedCellsMax = woundedCellsCounts.Max(x => x.WoundedCellsCount);
+			return woundedCellsCounts.Where(x => x.WoundedCellsCount == woundedCellsMax).Select(x => x.Ship).ToList();
+		}
+
 		private IEnumerable<Ship> GetPotentialShips(List<Vector> locations)
 		{
 			var horizontalShips = GetPotentialShips(locations, Direction.Horizontal);
@@ -260,7 +273,7 @@ namespace ai_poskrebyshev_roman
 			return horizontalShips.Concat(verticalShips);
 		}
 
-		private IEnumerable<Ship> GetPotentialShips(List<Vector> locations, Direction direction)
+		private IEnumerable<Ship> GetPotentialShips(IEnumerable<Vector> locations, Direction direction)
 		{
 			return
 				from location in locations
@@ -272,18 +285,14 @@ namespace ai_poskrebyshev_roman
 
 		private int[,] GetShipExpectation(IEnumerable<Ship> ships)
 		{
-			var shipCountMax = shipSizesCount.Max(x => x.Value);
-			var coefficient = Math.Max(map.Width, map.Height) * shipCountMax + 1;
 			var shipExpectation = new int[map.Width, map.Height];
-
 			foreach (var ship in ships)
 			{
 				var shipCells = ship.GetShipCells().ToList();
-				var woundedCellsCount = shipCells.Count(x => map[x] == CellStatus.Wounded);
 
 				foreach (var cell in shipCells)
 				{
-					shipExpectation[cell.X, cell.Y] += woundedCellsCount * coefficient + ship.Size * shipSizesCount[ship.Size];
+					shipExpectation[cell.X, cell.Y] += ship.Size * shipSizesCount[ship.Size];
 				}
 			}
 			return shipExpectation;
@@ -364,11 +373,6 @@ namespace ai_poskrebyshev_roman
 				.Where(c => !isShipCell[c.X, c.Y])
 				.All(c => this[c] == CellStatus.Hidden || this[c] == CellStatus.Missed);
 			return nearCellsAreHiddenOrMissed;
-		}
-
-		public IEnumerable<Vector> GetNearCells(IEnumerable<Vector> cells)
-		{
-			return cells.SelectMany(GetNearCells);
 		}
 
 		public IEnumerable<Vector> GetNearCells(Vector cell)
