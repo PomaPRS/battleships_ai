@@ -1,10 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
-using System.Runtime.Remoting.Messaging;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ai_poskrebyshev_roman
 {
@@ -103,7 +99,7 @@ namespace ai_poskrebyshev_roman
 			Strategy strategy;
 			if (aliveShipSizes.Any(x => x > 1))
 			{
-				strategy = new SearchStrategy(map, aliveShipSizes.ToArray());
+				strategy = new SmartStrategy(map, aliveShipSizes.ToArray());
 			}
 			else
 			{
@@ -215,12 +211,12 @@ namespace ai_poskrebyshev_roman
 		}
 	}
 
-	class SearchStrategy : Strategy
+	class SmartStrategy : Strategy
 	{
 		private readonly List<int> aliveShipSizes;
 		private readonly Dictionary<int, int> shipSizesCount;
 
-		public SearchStrategy(Map map, int[] aliveShipSizes) : base(map)
+		public SmartStrategy(Map map, int[] aliveShipSizes) : base(map)
 		{
 			this.aliveShipSizes = aliveShipSizes.Where(x => x > 1).Distinct().ToList();
 			shipSizesCount = aliveShipSizes.GroupBy(x => x).ToDictionary(x => x.Key, x => x.Count());
